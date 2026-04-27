@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from .base_skip import BaseSkip
+from .config import SkipManagerConfig
 from .skip_manager import SkipManager
 # register skip
 from .rollout_skip import RolloutSkip
 
-__all__ = ["BaseSkip", "SkipManager"]
+__all__ = ["BaseSkip", "SkipManager", "SkipManagerConfig"]

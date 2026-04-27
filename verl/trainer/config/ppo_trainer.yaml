@@ -332,6 +332,14 @@ transfer_queue:
         # Number of distributed storage units
         num_data_storage_units: 8
 
+# configs for SkipManager
+skip:
+  _target_: verl.utils.skip.SkipManagerConfig
+  rollout:
+    enable: False
+    dump_dir: "~/.verl/rollout_dump"
+    steps: []
+    action: cache
 # configs related to ray
 ray_kwargs:
 

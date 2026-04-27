@@ -846,6 +846,13 @@ transfer_queue:
     SimpleStorage:
       total_storage_size: 100000
       num_data_storage_units: 8
+skip:
+  _target_: verl.utils.skip.SkipManagerConfig
+  rollout:
+    enable: false
+    dump_dir: ~/.verl/rollout_dump
+    steps: []
+    action: cache
 ray_kwargs:
   ray_init:
     num_cpus: null
