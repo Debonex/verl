@@ -52,10 +52,10 @@ class SkipManager:
         cls.step = -1
         cls.skip_instances = {}
         for name, skip_cls in SKIP_REGISTRY.items():
-            instance = skip_cls(cls.config.get(name), config)
+            instance = skip_cls(getattr(cls.config, name), config)
             cls.skip_instances[name] = instance
             print(
-                    f"\033[33mSkip instance {name} initialized with config: {cls.config.get(name)}\033[0m",
+                    f"\033[33mSkip instance {name} initialized with config: {getattr(cls.config, name)}\033[0m",
                     flush=True,
                 )
 

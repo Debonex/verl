@@ -32,7 +32,7 @@ class RolloutSkip(BaseSkip):
         # prepare experiment info
         self.exp_name = global_config.trainer.get("experiment_name", "default_experiment_name")
         self.project_name = global_config.trainer.get("project_name", "default_project_name")
-        self.n = int(getattr(self.global_config, "n", 0))
+        self.n = int(global_config.actor_rollout_ref.rollout.get("n", 0))
         self.gbs = int(global_config.data.get("gen_batch_size", global_config.data.get("train_batch_size", 0)))
         self.response_length = global_config.data.get("max_response_length", 0)
         self.prompt_length = global_config.data.get("max_prompt_length", 0)
