@@ -27,7 +27,7 @@ class SkipManager:
 
     @classmethod
     def init(cls, config):
-        legacy_skip_enable = config.actor_rollout_ref.rollout.skip.enable
+        legacy_skip_enable = OmegaConf.select(config, "actor_rollout_ref.rollout.skip.enable", default=False)
         if legacy_skip_enable:
             warnings.warn(
                 (
