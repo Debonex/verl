@@ -74,7 +74,8 @@ class SkipManager:
             if inspect.iscoroutinefunction(func):
                 @functools.wraps(func)
                 async def async_wrapper(*args, **kwargs_inner):
-                    skip_instance = cls.skip_instances[role]
+                    skip_instance = cls.skip_instances.get(role)
+                    if skip_instance is None or not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                     if not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                         return await func(*args, **kwargs_inner)
                     skip_instance.set_context(cls.step)
