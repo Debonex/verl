@@ -14,5 +14,7 @@
 
 from .base_skip import BaseSkip
 from .skip_manager import SkipManager
+# register skip
+from .rollout_skip import RolloutSkip
 
 __all__ = ["BaseSkip", "SkipManager"]

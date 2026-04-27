@@ -18,7 +18,7 @@ from typing import Any, Callable, Optional
 
 from verl.utils.skip.base_skip import BaseSkip, SKIP_REGISTRY
 
-import verl.utils.skip.rollout_skip  # noqa: F401  # side effect: register "rollout" in SKIP_REGISTRY
+  # noqa: F401  # side effect: register "rollout" in SKIP_REGISTRY
 
 
 class SkipManager:
@@ -34,6 +34,10 @@ class SkipManager:
         for name, skip_cls in SKIP_REGISTRY.items():
             instance = skip_cls(cls.config.skip.get(name), cls.config)
             cls.skip_instances[name] = instance
+            print(
+                    f"\033[33mSkip instance {name} initialized with config: {cls.config.skip.get(name)}\033[0m",
+                    flush=True,
+                )
 
     @classmethod
     def set_step(cls, step: int):
@@ -43,29 +47,30 @@ class SkipManager:
     def annotate(cls, role: str, **kwargs_outer) -> Callable:
         def decorator(func: Callable) -> Callable:
             if inspect.iscoroutinefunction(func):
-
                 @functools.wraps(func)
                 async def async_wrapper(*args, **kwargs_inner):
-                    if not cls.skip_instances[role].is_enabled():
+                    skip_instance = cls.skip_instances[role]
+                    if not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                         return await func(*args, **kwargs_inner)
-                    cls.skip_instances[role].set_context(cls.step)
-                    if cls.skip_instances[role].meet_precondition():
-                        return cls.skip_instances[role].warp_function(func, *args, **kwargs_inner)
+                    skip_instance.set_context(cls.step)
+                    if skip_instance.meet_precondition():
+                        return skip_instance.warp_function(func, *args, **kwargs_inner)
                     result = await func(*args, **kwargs_inner)
-                    cls.skip_instances[role].prepare_data(result, *args, **kwargs_inner)
+                    skip_instance.prepare_data(result, *args, **kwargs_inner)
                     return result
 
                 return async_wrapper
 
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs_inner):
-                if not cls.skip_instances[role].is_enabled():
+                skip_instance = cls.skip_instances[role]
+                if not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                     return func(*args, **kwargs_inner)
-                cls.skip_instances[role].set_context(cls.step)
-                if cls.skip_instances[role].meet_precondition():
-                    return cls.skip_instances[role].warp_function(func, *args, **kwargs_inner)
+                skip_instance.set_context(cls.step)
+                if skip_instance.meet_precondition():
+                    return skip_instance.warp_function(func, *args, **kwargs_inner)
                 result = func(*args, **kwargs_inner)
-                cls.skip_instances[role].prepare_data(result, *args, **kwargs_inner)
+                skip_instance.prepare_data(result, *args, **kwargs_inner)
                 return result
 
             return sync_wrapper

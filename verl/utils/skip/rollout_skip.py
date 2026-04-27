@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from typing import Callable
+
 from verl.protocol import DataProto
 from pathlib import Path
 import json
@@ -40,18 +41,20 @@ class RolloutSkip(BaseSkip):
         if self.action == SkipAction.CACHE:
             if not self._check_valid_step_path(self._get_step_dump_dir()):
                 print(
-                    f"{self.print_mark}\033[33mNo dumped data found at gen_step {self.global_step} "
-                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data for this gen_step.\033[0m",
+                    f"{self.print_mark}\033[33mNo dumped data found at step {self.global_step} "
+                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data for this step.\033[0m",
                     flush=True,
                 )
                 return False
             else:
                 return True
+
         elif self.action == SkipAction.REPEAT:
-            if self._find_latest_step() == -1:
+            self.lastest_step = self._find_latest_step()
+            if self.lastest_step == -1:
                 print(
                     f"{self.print_mark}\033[33mNo dumped data found "
-                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data for this gen_step.\033[0m",
+                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data.\033[0m",
                     flush=True,
                 )
                 return False
@@ -64,11 +67,18 @@ class RolloutSkip(BaseSkip):
         if self.action == SkipAction.CACHE:
             step_dir = self._get_step_dump_dir()
         elif self.action == SkipAction.REPEAT:
-            step_dir = self._get_step_dump_dir(self._find_latest_step())
+            if self.lastest_step == -1:
+                self.lastest_step = self._find_latest_step()
+            step_dir = self._get_step_dump_dir(self.lastest_step)
         else:
             step_dir = Path()
         gen_batch_path = step_dir.joinpath(self.gen_batch_name)
-        return DataProto.load_from_disk(gen_batch_path)
+        result = DataProto.load_from_disk(gen_batch_path)
+        print(
+                f"{self.print_mark}\033[33mLoad generate result at step {self.global_step} from {gen_batch_path}\033[0m",
+                flush=True,
+            )
+        return result
 
     def prepare_data(self, result, *args, **kwargs):
         step_dir = self._get_step_dump_dir()
@@ -77,9 +87,13 @@ class RolloutSkip(BaseSkip):
             result.save_to_disk(step_dir.joinpath(self.gen_batch_name))
             meta_path = step_dir.joinpath(self.meta_name)
             meta_path.write_text(json.dumps({"global_steps": self.global_step}))
+            print(
+                f"{self.print_mark}\033[33mDump generate result at step {self.global_step} to {step_dir}\033[0m",
+                flush=True,
+            )
         except Exception as e:
             print(
-                f"{self.print_mark}\033[31mFailed to dump data in {step_dir}: {e}\033[0m",
+                f"{self.print_mark}\033[31mFailed to dump generate result at step {self.global_step} to {step_dir}: {e}\033[0m",
                 flush=True,
             )
 
@@ -129,8 +143,15 @@ class RolloutSkip(BaseSkip):
     def _find_latest_step(self) -> int:
         """Prefer exact ready step, else max step < current, else min step > current; -1 if none."""
         if self._check_valid_step_path(self._get_step_dump_dir()):
-            return int(self.global_step)
+            return self.global_step
         available = self._get_available_steps()
         if not available:
             return -1
-        return available[-1]
+        # try to find the closest step
+        smaller_steps = [step for step in available if step < self.global_step]
+        if smaller_steps:
+            return smaller_steps[-1]
+        larger_steps = [step for step in available if step > self.global_step]
+        if larger_steps:
+            return larger_steps[0]
+        return -1
