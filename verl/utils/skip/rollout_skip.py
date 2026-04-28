@@ -11,17 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
+from pathlib import Path
 from typing import Callable
 
-from verl.protocol import DataProto
-from pathlib import Path
-import json
+from omegaconf import OmegaConf
 
-from verl.utils.skip.base_skip import BaseSkip, register_skip, SkipAction
+from verl.protocol import DataProto
+from verl.utils.skip.base_skip import BaseSkip, SkipAction, register_skip
 
 
 @register_skip("rollout")
 class RolloutSkip(BaseSkip):
+    """RolloutSkip skips sequence generation during rollout by attempting to load previously dumped data."""
+
     support_actions = [SkipAction.CACHE, SkipAction.REPEAT]
     print_mark = "[RolloutSkip()] "
     gen_batch_name = "gen_batch.dp"
@@ -33,7 +36,13 @@ class RolloutSkip(BaseSkip):
         self.exp_name = global_config.trainer.get("experiment_name", "default_experiment_name")
         self.project_name = global_config.trainer.get("project_name", "default_project_name")
         self.n = int(OmegaConf.select(global_config, "actor_rollout_ref.rollout.n", default=0))
-        self.gbs = int(OmegaConf.select(global_config, "data.gen_batch_size", default=OmegaConf.select(global_config, "data.train_batch_size", default=0)))
+        self.gbs = int(
+            OmegaConf.select(
+                global_config,
+                "data.gen_batch_size",
+                default=OmegaConf.select(global_config, "data.train_batch_size", default=0),
+            )
+        )
         self.response_length = OmegaConf.select(global_config, "data.max_response_length", default=0)
         self.prompt_length = OmegaConf.select(global_config, "data.max_prompt_length", default=0)
 
@@ -42,7 +51,8 @@ class RolloutSkip(BaseSkip):
             if not self._check_valid_step_path(self._get_step_dump_dir()):
                 print(
                     f"{self.print_mark}\033[33mNo dumped data found at step {self.global_step} "
-                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data for this step.\033[0m",
+                    f"from {self._get_project_dump_dir()}. "
+                    f"The trainer will generate and dump the data for this step.\033[0m",
                     flush=True,
                 )
                 return False
@@ -54,7 +64,8 @@ class RolloutSkip(BaseSkip):
             if self.lastest_step == -1:
                 print(
                     f"{self.print_mark}\033[33mNo dumped data found "
-                    f"from {self._get_project_dump_dir()}. The trainer will generate and dump the data.\033[0m",
+                    f"from {self._get_project_dump_dir()}. "
+                    f"The trainer will generate and dump the data.\033[0m",
                     flush=True,
                 )
                 return False
@@ -75,9 +86,9 @@ class RolloutSkip(BaseSkip):
         gen_batch_path = step_dir.joinpath(self.gen_batch_name)
         result = DataProto.load_from_disk(gen_batch_path)
         print(
-                f"{self.print_mark}\033[33mLoad generate result at step {self.global_step} from {gen_batch_path}\033[0m",
-                flush=True,
-            )
+            f"{self.print_mark}\033[33mLoad generate result at step {self.global_step} from {gen_batch_path}\033[0m",
+            flush=True,
+        )
         return result
 
     def prepare_data(self, result, *args, **kwargs):
@@ -93,7 +104,8 @@ class RolloutSkip(BaseSkip):
             )
         except Exception as e:
             print(
-                f"{self.print_mark}\033[31mFailed to dump generate result at step {self.global_step} to {step_dir}: {e}\033[0m",
+                f"{self.print_mark}\033[31mFailed to dump generate result "
+                f"at step {self.global_step} to {step_dir}: {e}\033[0m",
                 flush=True,
             )
 
@@ -116,12 +128,7 @@ class RolloutSkip(BaseSkip):
             return False
         gen_batch_path = path.joinpath(self.gen_batch_name)
         meta_path = path.joinpath(self.meta_name)
-        return (
-            gen_batch_path.exists()
-            and gen_batch_path.is_file()
-            and meta_path.exists()
-            and meta_path.is_file()
-        )
+        return gen_batch_path.exists() and gen_batch_path.is_file() and meta_path.exists() and meta_path.is_file()
 
     def _get_available_steps(self) -> list[int]:
         result: list[int] = []

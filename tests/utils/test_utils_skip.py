@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 import uuid
@@ -28,6 +29,7 @@ import torch
 from omegaconf import OmegaConf
 
 from verl.protocol import DataProto
+from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.skip.base_skip import SKIP_REGISTRY, BaseSkip, SkipAction, register_skip
 from verl.utils.skip.config import RolloutSkipConfig, SkipManagerConfig
 from verl.utils.skip.rollout_skip import RolloutSkip
@@ -71,6 +73,11 @@ def _minimal_rollout_skip_cfg(
             "n": 2,
         }
     )
+
+
+def _local_rollout_config(cfg: OmegaConf) -> RolloutSkipConfig:
+    """Match ``SkipManager`` / trainer: merge YAML dict into ``RolloutSkipConfig`` (not a plain dict)."""
+    return omega_conf_to_dataclass(cfg.skip.rollout, RolloutSkipConfig)
 
 
 def _project_dump_root(dump_dir: Path, cfg: OmegaConf) -> Path:
@@ -145,7 +152,7 @@ class TestSkipRegistryAndBaseSkip:
 class TestRolloutSkipPaths:
     def test_check_valid_step_path(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=True, steps=[1], action="cache")
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         root = _project_dump_root(tmp_path, cfg)
 
@@ -157,7 +164,7 @@ class TestRolloutSkipPaths:
 
     def test_get_available_steps_filters_invalid_dirs(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path))
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         root = _project_dump_root(tmp_path, cfg)
         root.mkdir(parents=True)
@@ -172,7 +179,7 @@ class TestRolloutSkipPaths:
 
     def test_find_latest_step_exact_then_smaller_then_larger(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path))
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         root = _project_dump_root(tmp_path, cfg)
         proto = DataProto.from_dict(tensors={"x": torch.tensor([2.0])})
@@ -198,7 +205,7 @@ class TestRolloutSkipPaths:
 class TestRolloutSkipMeetWarpPrepare:
     def test_meet_precondition_cache_miss_and_hit(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path), action="cache")
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         root = _project_dump_root(tmp_path, cfg)
 
@@ -211,7 +218,7 @@ class TestRolloutSkipMeetWarpPrepare:
 
     def test_meet_precondition_repeat(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path), action="repeat")
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         root = _project_dump_root(tmp_path, cfg)
         proto = DataProto.from_dict(tensors={"t": torch.tensor([1.0])})
@@ -224,7 +231,7 @@ class TestRolloutSkipMeetWarpPrepare:
 
     def test_prepare_data_and_warp_roundtrip(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path), action="cache")
-        local = OmegaConf.to_object(cfg.skip.rollout)
+        local = _local_rollout_config(cfg)
         rs = RolloutSkip(local, cfg)
         rs.set_context(3)
         original = DataProto.from_dict(tensors={"k": torch.tensor([[1.0, 2.0]])})
@@ -289,8 +296,7 @@ class TestSkipManagerInitAndAnnotate:
         loaded = gen2()
         assert torch.allclose(loaded.batch["z"], torch.tensor([7.0]))
 
-    @pytest.mark.asyncio
-    async def test_annotate_async_same_semantics(self, tmp_path: Path):
+    def test_annotate_async_same_semantics(self, tmp_path: Path):
         cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=True, steps=[1], action="cache")
         SkipManager.init(cfg)
         root = _project_dump_root(tmp_path, cfg)
@@ -299,19 +305,22 @@ class TestSkipManagerInitAndAnnotate:
         async def agen() -> DataProto:
             return DataProto.from_dict(tensors={"a": torch.tensor([1, 2, 3])})
 
-        SkipManager.set_step(1)
-        out = await agen()
-        assert list(out.batch["a"].tolist()) == [1, 2, 3]
-        assert (root / "1" / "gen_batch.dp").exists()
+        async def _run():
+            SkipManager.set_step(1)
+            out = await agen()
+            assert list(out.batch["a"].tolist()) == [1, 2, 3]
+            assert (root / "1" / "gen_batch.dp").exists()
 
-        SkipManager.set_step(1)
+            SkipManager.set_step(1)
 
-        @SkipManager.annotate(role="rollout")
-        async def agen2() -> DataProto:
-            raise AssertionError("cached path")
+            @SkipManager.annotate(role="rollout")
+            async def agen2() -> DataProto:
+                raise AssertionError("cached path")
 
-        loaded = await agen2()
-        assert list(loaded.batch["a"].tolist()) == [1, 2, 3]
+            loaded = await agen2()
+            assert list(loaded.batch["a"].tolist()) == [1, 2, 3]
+
+        asyncio.run(_run())
 
 
 class TestSkipManagerConfigDataclass:
@@ -319,3 +328,72 @@ class TestSkipManagerConfigDataclass:
         c = SkipManagerConfig()
         assert isinstance(c.rollout, RolloutSkipConfig)
         assert c.rollout.enable is False
+
+
+class TestSkipManagerRuntimeScenarios:
+    def test_annotate_unknown_role_is_noop(self, tmp_path: Path):
+        cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=True, steps=[1])
+        SkipManager.init(cfg)
+        SkipManager.set_step(1)
+
+        @SkipManager.annotate(role="unknown_role")
+        def f(x: int) -> int:
+            return x * 2
+
+        assert f(3) == 6
+
+    def test_legacy_only_enabled_warns_but_keeps_legacy_flag(self, tmp_path: Path):
+        cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=False, steps=[1])
+        cfg.actor_rollout_ref.rollout.skip.enable = True
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            SkipManager.init(cfg)
+        assert any(item.category is DeprecationWarning for item in w)
+        assert cfg.actor_rollout_ref.rollout.skip.enable is True
+
+    def test_new_and_legacy_enabled_disables_legacy(self, tmp_path: Path):
+        cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=True, steps=[1])
+        cfg.actor_rollout_ref.rollout.skip.enable = True
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            SkipManager.init(cfg)
+        assert any(item.category is DeprecationWarning for item in w)
+        assert cfg.actor_rollout_ref.rollout.skip.enable is False
+
+
+class TestSkipDumpDiskScenarios:
+    def test_dump_dirs_are_isolated_by_config(self, tmp_path: Path):
+        dump_a = tmp_path / "disk_a"
+        dump_b = tmp_path / "disk_b"
+        cfg_a = _minimal_rollout_skip_cfg(str(dump_a), enable=True, steps=[1], action="cache")
+        cfg_b = _minimal_rollout_skip_cfg(str(dump_b), enable=True, steps=[1], action="cache")
+        local_a = _local_rollout_config(cfg_a)
+        local_b = _local_rollout_config(cfg_b)
+        rs_a = RolloutSkip(local_a, cfg_a)
+        rs_b = RolloutSkip(local_b, cfg_b)
+
+        rs_a.set_context(1)
+        rs_b.set_context(1)
+        rs_a.prepare_data(DataProto.from_dict(tensors={"x": torch.tensor([1.0])}))
+        rs_b.prepare_data(DataProto.from_dict(tensors={"x": torch.tensor([2.0])}))
+
+        loaded_a = rs_a.warp_function(lambda: None)
+        loaded_b = rs_b.warp_function(lambda: None)
+        assert loaded_a.batch["x"].item() == 1.0
+        assert loaded_b.batch["x"].item() == 2.0
+
+    def test_prepare_data_handles_disk_write_error_without_raising(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        cfg = _minimal_rollout_skip_cfg(str(tmp_path), enable=True, steps=[1], action="cache")
+        local = _local_rollout_config(cfg)
+        rs = RolloutSkip(local, cfg)
+        rs.set_context(1)
+
+        def _raise_save(*args, **kwargs):
+            raise OSError("simulated disk write failure")
+
+        monkeypatch.setattr(DataProto, "save_to_disk", _raise_save)
+        rs.prepare_data(DataProto.from_dict(tensors={"x": torch.tensor([1.0])}))
+        dump_file = rs._get_step_dump_dir().joinpath("gen_batch.dp")
+        assert dump_file.exists() is False

@@ -826,7 +826,6 @@ transfer_queue:
 skip:
   _target_: verl.utils.skip.SkipManagerConfig
   rollout:
-  
     enable: false
     dump_dir: ~/.verl/rollout_dump
     steps: []

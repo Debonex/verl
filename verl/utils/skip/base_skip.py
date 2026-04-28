@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Callable
 from enum import Enum
+from typing import Callable
 
 
 class SkipAction(Enum):
@@ -29,6 +29,13 @@ class SkipAction(Enum):
 
 
 class BaseSkip:
+    """Base class for skip.
+
+    Args:
+        local_config: The local configuration object, refer to verl.utils.skip.SkipManagerConfig.
+        global_config: The global configuration object.
+    """
+
     support_actions = []
 
     def __init__(self, local_config, global_config):

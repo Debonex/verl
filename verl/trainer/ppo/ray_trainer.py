@@ -67,6 +67,7 @@ from verl.utils.metric import reduce_metrics
 from verl.utils.py_functional import rename_dict
 from verl.utils.rollout_skip import RolloutSkip
 from verl.utils.seqlen_balancing import calculate_workload, get_seqlen_balanced_partitions, log_seqlen_unbalance
+from verl.utils.skip.skip_manager import SkipManager
 from verl.utils.torch_functional import masked_mean
 from verl.utils.tracking import ValidationGenerationsLogger
 from verl.workers.config import DistillationConfig, EngineConfig
@@ -1304,8 +1305,6 @@ class RayPPOTrainer:
 
         current_epoch = self.global_steps // len(self.train_dataloader)
 
-        # SkipManager 必须在任意会触发 rollout 的路径之前初始化（含 val_before_train）。
-        from verl.utils.skip.skip_manager import SkipManager
         SkipManager.init(self.config)
 
         # perform validation before training

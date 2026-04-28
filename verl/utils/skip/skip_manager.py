@@ -15,25 +15,33 @@
 import functools
 import inspect
 import warnings
-from typing import Any, Callable, Optional
+from typing import Callable
 
-from verl.utils.skip.base_skip import SKIP_REGISTRY
+from omegaconf import OmegaConf
+
 from verl.utils.config import omega_conf_to_dataclass
+from verl.utils.skip.base_skip import SKIP_REGISTRY
 from verl.utils.skip.config import SkipManagerConfig
 
 
-
 class SkipManager:
+    """SkipManager is a manager for skip.
+
+    Class attributes default here so code paths (e.g. tests or modules that only import
+    ``@SkipManager.annotate``) work **before** ``SkipManager.init(config)`` runs — decorators
+    then no-op until the trainer initializes skip state.
+    """
+
+    config: SkipManagerConfig | None = None
+    step: int = -1
+    skip_instances: dict = {}  # noqa: RUF012 — intentionally mutable class defaults, reset in ``init``
 
     @classmethod
     def init(cls, config):
         legacy_skip_enable = OmegaConf.select(config, "actor_rollout_ref.rollout.skip.enable", default=False)
         if legacy_skip_enable:
             warnings.warn(
-                (
-                    "`actor_rollout_ref.rollout.skip` is deprecated. "
-                    "Please migrate to `skip.rollout`."
-                ),
+                ("`actor_rollout_ref.rollout.skip` is deprecated. Please migrate to `skip.rollout`."),
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -52,17 +60,11 @@ class SkipManager:
         cls.step = -1
         cls.skip_instances = {}
         for name, skip_cls in SKIP_REGISTRY.items():
-        for name, skip_cls in SKIP_REGISTRY.items():
             local_cfg = getattr(cls.config, name, None)
             if local_cfg is None:
                 continue
             instance = skip_cls(local_cfg, config)
             cls.skip_instances[name] = instance
-            cls.skip_instances[name] = instance
-            print(
-                    f"\033[33mSkip instance {name} initialized with config: {getattr(cls.config, name)}\033[0m",
-                    flush=True,
-                )
 
     @classmethod
     def set_step(cls, step: int):
@@ -72,11 +74,11 @@ class SkipManager:
     def annotate(cls, role: str, **kwargs_outer) -> Callable:
         def decorator(func: Callable) -> Callable:
             if inspect.iscoroutinefunction(func):
+
                 @functools.wraps(func)
                 async def async_wrapper(*args, **kwargs_inner):
                     skip_instance = cls.skip_instances.get(role)
                     if skip_instance is None or not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
-                    if not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                         return await func(*args, **kwargs_inner)
                     skip_instance.set_context(cls.step)
                     if skip_instance.meet_precondition():
@@ -89,8 +91,8 @@ class SkipManager:
 
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs_inner):
-                skip_instance = cls.skip_instances[role]
-                if not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
+                skip_instance = cls.skip_instances.get(role)
+                if skip_instance is None or not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
                     return func(*args, **kwargs_inner)
                 skip_instance.set_context(cls.step)
                 if skip_instance.meet_precondition():

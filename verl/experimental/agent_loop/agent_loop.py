@@ -47,6 +47,7 @@ from verl.utils.rollout_trace import (
     rollout_trace_attr,
     rollout_trace_op,
 )
+from verl.utils.skip import SkipManager
 from verl.utils.tokenizer import normalize_token_ids
 from verl.workers.config import (
     DistillationConfig,
@@ -1188,7 +1189,6 @@ class AgentLoopManager:
             max_cache_size=DEFAULT_ROUTING_CACHE_SIZE,
         )
 
-    from verl.utils.skip import SkipManager
     @auto_await
     @SkipManager.annotate(role="rollout")
     async def generate_sequences(self, prompts: DataProto) -> DataProto:
