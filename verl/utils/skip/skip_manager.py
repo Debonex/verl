@@ -78,7 +78,9 @@ class SkipManager:
                 @functools.wraps(func)
                 async def async_wrapper(*args, **kwargs_inner):
                     skip_instance = cls.skip_instances.get(role)
-                    if skip_instance is None or not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
+                    if skip_instance is None or not skip_instance.is_enabled():
+                        return await func(*args, **kwargs_inner)
+                    if skip_instance.steps and cls.step not in skip_instance.steps:
                         return await func(*args, **kwargs_inner)
                     skip_instance.set_context(cls.step)
                     if skip_instance.meet_precondition():
@@ -92,7 +94,9 @@ class SkipManager:
             @functools.wraps(func)
             def sync_wrapper(*args, **kwargs_inner):
                 skip_instance = cls.skip_instances.get(role)
-                if skip_instance is None or not skip_instance.is_enabled() or cls.step not in skip_instance.steps:
+                if skip_instance is None or not skip_instance.is_enabled():
+                    return func(*args, **kwargs_inner)
+                if skip_instance.steps and cls.step not in skip_instance.steps:
                     return func(*args, **kwargs_inner)
                 skip_instance.set_context(cls.step)
                 if skip_instance.meet_precondition():

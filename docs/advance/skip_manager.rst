@@ -140,7 +140,7 @@ training steps by returning an empty ``DataProto`` with ``meta_info={"metrics": 
 
 - **enable** (bool): Master switch for TrainSkip.
 - **steps** (list[int]): Trainer **global step** values at which ``_update_critic`` and
-  ``_update_actor`` are skipped.
+  ``_update_actor`` are skipped. An empty list means skip on all steps while ``enable=True``.
 - **action** (``empty``): Only ``"empty"`` is supported. Returns an empty ``DataProto``.
 
 **Call-site safety**

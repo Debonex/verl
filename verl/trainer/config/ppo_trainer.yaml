@@ -359,7 +359,7 @@ skip:
     # Whether to enable TrainSkip
     enable: False
 
-    # Steps to skip update_critic and update_actor
+    # Steps to skip update_critic and update_actor; empty means skip all steps
     steps: []
 
     # Action to take when training is skipped, refer to verl.utils.skip.base_skip.SkipAction

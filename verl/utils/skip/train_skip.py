@@ -30,7 +30,7 @@ class TrainSkip(BaseSkip):
 
     def warp_function(self, func: Callable, *args, **kwargs):
         print(
-            f"{self.print_mark}Skip _update_critic/_update_actor at step {self.global_step}",
+            f"{self.print_mark}\033[33mSkip _update_critic/_update_actor at step {self.global_step}\033[0m",
             flush=True,
         )
         return DataProto.from_single_dict({}, meta_info={"metrics": {}})
