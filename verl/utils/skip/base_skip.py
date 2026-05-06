@@ -41,7 +41,7 @@ class BaseSkip:
     def __init__(self, local_config, global_config):
         self.action = SkipAction(local_config.action)
         self.enable = local_config.enable
-        self.dump_dir = local_config.dump_dir
+        self.dump_dir = getattr(local_config, "dump_dir", None)
         self.steps = local_config.steps
         self.global_config = global_config
         self.global_step = -1

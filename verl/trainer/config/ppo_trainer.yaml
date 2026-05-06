@@ -338,7 +338,7 @@ skip:
   # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
   _target_: verl.utils.skip.SkipManagerConfig
 
-  # configs for RolloutSkip 
+  # configs for RolloutSkip
   rollout:
 
     # Whether to enable RolloutSkip
@@ -352,6 +352,18 @@ skip:
 
     # Action to take when rollout is skipped, refer to verl.utils.skip.base_skip.SkipAction
     action: cache
+
+  # configs for TrainSkip
+  train:
+
+    # Whether to enable TrainSkip
+    enable: False
+
+    # Steps to skip update_critic and update_actor
+    steps: []
+
+    # Action to take when training is skipped, refer to verl.utils.skip.base_skip.SkipAction
+    action: empty
 
 # configs related to ray
 ray_kwargs:

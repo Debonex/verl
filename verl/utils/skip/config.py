@@ -35,7 +35,23 @@ class RolloutSkipConfig(BaseConfig):
 
 
 @dataclass
+class TrainSkipConfig(BaseConfig):
+    """Config for train skip behavior."""
+
+    enable: bool = False
+    steps: list[int] = field(default_factory=list)
+    action: str = "empty"
+
+    def __post_init__(self) -> None:
+        assert isinstance(self.enable, bool), f"`enable` must be bool, got {type(self.enable)}"
+        assert isinstance(self.steps, list), f"`steps` must be list[int], got {type(self.steps)}"
+        assert all(isinstance(step, int) for step in self.steps), "`steps` must contain int only"
+        assert self.action == "empty", f"`action` only supports 'empty', got {self.action}"
+
+
+@dataclass
 class SkipManagerConfig(BaseConfig):
     """Top-level config for skip modules."""
 
     rollout: RolloutSkipConfig = field(default_factory=RolloutSkipConfig)
+    train: TrainSkipConfig = field(default_factory=TrainSkipConfig)

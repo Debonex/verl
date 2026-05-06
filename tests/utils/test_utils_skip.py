@@ -31,9 +31,10 @@ from omegaconf import OmegaConf
 from verl.protocol import DataProto
 from verl.utils.config import omega_conf_to_dataclass
 from verl.utils.skip.base_skip import SKIP_REGISTRY, BaseSkip, SkipAction, register_skip
-from verl.utils.skip.config import RolloutSkipConfig, SkipManagerConfig
+from verl.utils.skip.config import RolloutSkipConfig, SkipManagerConfig, TrainSkipConfig
 from verl.utils.skip.rollout_skip import RolloutSkip
 from verl.utils.skip.skip_manager import SkipManager
+from verl.utils.skip.train_skip import TrainSkip
 
 
 def _reset_skip_manager_class_state() -> None:
@@ -328,6 +329,9 @@ class TestSkipManagerConfigDataclass:
         c = SkipManagerConfig()
         assert isinstance(c.rollout, RolloutSkipConfig)
         assert c.rollout.enable is False
+        assert isinstance(c.train, TrainSkipConfig)
+        assert c.train.enable is False
+        assert c.train.action == "empty"
 
 
 class TestSkipManagerRuntimeScenarios:
@@ -397,3 +401,129 @@ class TestSkipDumpDiskScenarios:
         rs.prepare_data(DataProto.from_dict(tensors={"x": torch.tensor([1.0])}))
         dump_file = rs._get_step_dump_dir().joinpath("gen_batch.dp")
         assert dump_file.exists() is False
+
+
+class TestTrainSkipConfig:
+    def test_defaults(self):
+        c = TrainSkipConfig()
+        assert c.enable is False
+        assert c.action == "empty"
+        assert c.steps == []
+
+    def test_invalid_action(self):
+        with pytest.raises(AssertionError, match="action"):
+            TrainSkipConfig(action="cache")
+
+    def test_steps_must_be_int(self):
+        with pytest.raises(AssertionError, match="steps"):
+            TrainSkipConfig(steps=[1, "x"])  # type: ignore[list-item]
+
+
+class TestTrainSkipRegistryAndBase:
+    def test_train_registered(self):
+        assert "train" in SKIP_REGISTRY
+
+    def test_meet_precondition_always_true(self, tmp_path: Path):
+        cfg = OmegaConf.create({})
+        local = TrainSkipConfig(enable=True, steps=[1], action="empty")
+        ts = TrainSkip(local, cfg)
+        assert ts.meet_precondition() is True
+        ts.set_context(99)
+        assert ts.meet_precondition() is True
+
+    def test_warp_function_returns_empty_dataproto(self, tmp_path: Path):
+        cfg = OmegaConf.create({})
+        local = TrainSkipConfig(enable=True, steps=[1], action="empty")
+        ts = TrainSkip(local, cfg)
+        ts.set_context(1)
+        result = ts.warp_function(lambda: "ignored")
+        assert isinstance(result, DataProto)
+        assert result.meta_info["metrics"] == {}
+
+    def test_prepare_data_is_noop(self, tmp_path: Path):
+        cfg = OmegaConf.create({})
+        local = TrainSkipConfig(enable=True, steps=[1], action="empty")
+        ts = TrainSkip(local, cfg)
+        # should not raise
+        ts.prepare_data(None)
+
+
+def _minimal_train_skip_cfg(
+    *,
+    enable: bool = True,
+    steps: list[int] | None = None,
+    action: str = "empty",
+) -> OmegaConf:
+    steps = steps if steps is not None else [1]
+    return OmegaConf.create(
+        {
+            "skip": {
+                "train": {
+                    "enable": enable,
+                    "steps": steps,
+                    "action": action,
+                }
+            },
+        }
+    )
+
+
+class TestTrainSkipIntegration:
+    def test_init_builds_train_skip_instance(self):
+        cfg = _minimal_train_skip_cfg(steps=[1, 2])
+        SkipManager.init(cfg)
+        assert "train" in SkipManager.skip_instances
+        inst = SkipManager.skip_instances["train"]
+        assert inst.is_enabled() is True
+        assert inst.steps == [1, 2]
+
+    def test_annotate_skip_when_step_matches(self):
+        cfg = _minimal_train_skip_cfg(enable=True, steps=[1])
+        SkipManager.init(cfg)
+
+        @SkipManager.annotate(role="train")
+        def train_fn(batch: DataProto) -> DataProto:
+            raise AssertionError("should not be called")
+
+        SkipManager.set_step(1)
+        result = train_fn(DataProto.from_single_dict({}))
+        assert isinstance(result, DataProto)
+        assert result.meta_info["metrics"] == {}
+
+    def test_annotate_passthrough_when_step_not_matches(self):
+        cfg = _minimal_train_skip_cfg(enable=True, steps=[99])
+        SkipManager.init(cfg)
+
+        @SkipManager.annotate(role="train")
+        def train_fn(batch: DataProto) -> DataProto:
+            return DataProto.from_single_dict({}, meta_info={"metrics": {"loss": 0.5}})
+
+        SkipManager.set_step(1)
+        result = train_fn(DataProto.from_single_dict({}))
+        assert result.meta_info["metrics"] == {"loss": 0.5}
+
+    def test_both_update_critic_and_actor_skipped(self):
+        """Integration: both _update_critic and _update_actor skipped when step matches."""
+        cfg = _minimal_train_skip_cfg(enable=True, steps=[3])
+        SkipManager.init(cfg)
+
+        @SkipManager.annotate(role="train")
+        def _update_critic(batch: DataProto) -> DataProto:
+            raise AssertionError("critic should be skipped")
+
+        @SkipManager.annotate(role="train")
+        def _update_actor(batch: DataProto) -> DataProto:
+            raise AssertionError("actor should be skipped")
+
+        SkipManager.set_step(3)
+        critic_output = _update_critic(DataProto.from_single_dict({}))
+        actor_output = _update_actor(DataProto.from_single_dict({}))
+        assert critic_output.meta_info["metrics"] == {}
+        assert actor_output.meta_info["metrics"] == {}
+
+    def test_reduce_metrics_on_empty_dict_is_safe(self):
+        """Verify reduce_metrics on empty metrics dict returns {} — safe for call sites."""
+        from verl.trainer.ppo.metric_utils import reduce_metrics
+
+        result = reduce_metrics({})
+        assert result == {}

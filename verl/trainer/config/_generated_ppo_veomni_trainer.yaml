@@ -830,6 +830,10 @@ skip:
     dump_dir: ~/.verl/rollout_dump
     steps: []
     action: cache
+  train:
+    enable: false
+    steps: []
+    action: empty
 ray_kwargs:
   ray_init:
     num_cpus: null

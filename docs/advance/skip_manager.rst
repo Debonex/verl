@@ -116,6 +116,55 @@ Extend with custom skip modules
 3. Add a matching field under ``SkipManagerConfig`` (or use structured defaults) so
    ``SkipManager.init`` can pass ``cls.config.get("your_role_name")`` into your class.
 
+TrainSkip — Skip update_critic and update_actor
+--------------------------------------------------
+
+**TrainSkip** (``verl.utils.skip.train_skip.TrainSkip``) is a skip module registered under the
+``"train"`` role. It bypasses ``_update_critic`` and ``_update_actor`` calls at specified
+training steps by returning an empty ``DataProto`` with ``meta_info={"metrics": {}}``.
+
+.. note::
+
+   TrainSkip currently only supports the ``"empty"`` action. This is a proof-of-concept
+   implementation. Other actions (e.g. disk persistence) may be added in the future.
+
+**Configuration (Hydra)**
+
+.. code-block:: bash
+
+   skip.train.enable=True
+   skip.train.steps='[1,2,3,10]'
+   skip.train.action=empty
+
+**Parameters (``skip.train`` / ``TrainSkipConfig``)**
+
+- **enable** (bool): Master switch for TrainSkip.
+- **steps** (list[int]): Trainer **global step** values at which ``_update_critic`` and
+  ``_update_actor`` are skipped.
+- **action** (``empty``): Only ``"empty"`` is supported. Returns an empty ``DataProto``.
+
+**Call-site safety**
+
+When skip is active, ``warp_function()`` returns an empty ``DataProto``. The trainer call
+sites access it only via ``reduce_metrics(critic_output.meta_info["metrics"])`` and
+``metrics.update(...)``, both of which safely handle an empty dict — no crash, no side
+effects.
+
+**Trainer integration**
+
+In ``RayPPOTrainer``, both methods are decorated:
+
+.. code-block:: python
+
+   @SkipManager.annotate(role="train")
+   def _update_critic(self, batch: DataProto) -> DataProto:
+       ...
+
+   @SkipManager.annotate(role="train")
+   def _update_actor(self, batch: DataProto) -> DataProto:
+       ...
+
+
 Further reading
 ---------------
 
